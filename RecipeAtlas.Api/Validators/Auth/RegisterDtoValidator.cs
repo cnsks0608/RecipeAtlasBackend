@@ -18,7 +18,8 @@ public class RegisterDtoValidator : AbstractValidator<RegisterDto>
         RuleFor(x => x.Email)
             .NotEmpty().WithMessage("E-posta boş olamaz.")
             .MaximumLength(255).WithMessage("E-posta en fazla 255 karakter olabilir.")
-            .EmailAddress().WithMessage("Geçerli bir e-posta girin.");
+            .EmailAddress().WithMessage("Geçerli bir e-posta girin.")
+            .Must(email => email == email.ToLowerInvariant()).WithMessage("E-posta sadece küçük harflerden oluşmalı.");
 
         RuleFor(x => x.Password)
             .NotEmpty().WithMessage("Şifre boş olamaz.")

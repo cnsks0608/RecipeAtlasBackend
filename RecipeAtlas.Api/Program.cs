@@ -8,6 +8,7 @@ using FluentValidation;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 using RecipeAtlas.Api.Middleware;
+using RecipeAtlas.Api.Services.Email;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,6 +20,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddScoped<IJwtService, JwtService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
 // Projedeki tüm validator'ları (RegisterDtoValidator, LoginDtoValidator...) otomatik bulup kaydeder
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 // Controller sınıflarını uygulamaya tanıtır.
@@ -27,10 +29,14 @@ builder.Services.AddControllers();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 
-// Giriş endpoint'i için hız sınırı: aynı IP, belirlenen sürede belirlenen sayıdan fazla istek atamaz.
+// Hız sınırları: aynı IP, belirlenen sürede belirlenen sayıdan fazla istek atamaz.
 // Değerler appsettings.json'daki RateLimit bölümünden gelir.
 var loginPermitLimit = builder.Configuration.GetValue<int>("RateLimit:LoginPermitLimit");
 var loginWindowSeconds = builder.Configuration.GetValue<int>("RateLimit:LoginWindowSeconds");
+var registerPermitLimit = builder.Configuration.GetValue<int>("RateLimit:RegisterPermitLimit");
+var registerWindowSeconds = builder.Configuration.GetValue<int>("RateLimit:RegisterWindowSeconds");
+var verifyPermitLimit = builder.Configuration.GetValue<int>("RateLimit:VerifyPermitLimit");
+var verifyWindowSeconds = builder.Configuration.GetValue<int>("RateLimit:VerifyWindowSeconds");
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -42,6 +48,28 @@ builder.Services.AddRateLimiter(options =>
             {
                 PermitLimit = loginPermitLimit,
                 Window = TimeSpan.FromSeconds(loginWindowSeconds),
+                QueueLimit = 0
+            }));
+
+    // "register" adlı politika: kayıt e-posta gönderdiği için daha sıkı. Aynı mantık, farklı sayılar.
+    options.AddPolicy("register", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = registerPermitLimit,
+                Window = TimeSpan.FromSeconds(registerWindowSeconds),
+                QueueLimit = 0
+            }));
+
+    // "verify" adlı politika: kod doğrulama denemelerini sınırlar.
+    options.AddPolicy("verify", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = verifyPermitLimit,
+                Window = TimeSpan.FromSeconds(verifyWindowSeconds),
                 QueueLimit = 0
             }));
 
